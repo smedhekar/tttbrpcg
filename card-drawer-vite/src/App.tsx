@@ -1,4 +1,3 @@
-
 import React, { useMemo, useRef, useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent } from "@/components/ui/card";
@@ -7,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { X, Dice3, Shuffle, Layers, Upload, Loader2, Trash2, ChevronDown, ChevronUp, PlusCircle, Eraser, Layers as LayersIcon } from "lucide-react";
+import { X, Dice3, Shuffle, Layers, Upload, Loader2, Trash2, PlusCircle, Eraser, Layers as LayersIcon } from "lucide-react";
 import Papa from "papaparse";
 
 type Row = Record<string, string>;
@@ -18,6 +17,48 @@ type DataBundle = {
   locations: Row[];
   quests: Row[];
 };
+
+type Category = keyof DataBundle;
+
+const CATEGORY_OPTIONS: Array<{ key: Category; label: string }> = [
+  { key: "characters", label: "Characters" },
+  { key: "items", label: "Items" },
+  { key: "locations", label: "Locations" },
+  { key: "quests", label: "Quests" },
+];
+
+const CATEGORY_ORDER: Category[] = CATEGORY_OPTIONS.map((option) => option.key);
+
+const CATEGORY_MATCHES: Record<Category, string[]> = {
+  characters: ["characters", "character"],
+  items: ["items", "item"],
+  locations: ["locations", "location"],
+  quests: ["quests", "quest"],
+};
+
+const getCategoryLabel = (category: Category) =>
+  CATEGORY_OPTIONS.find((option) => option.key === category)?.label ?? category;
+
+const detectCategoryFromFilename = (name: string): Category | null => {
+  const lower = name.toLowerCase();
+  for (const category of CATEGORY_ORDER) {
+    const tokens = CATEGORY_MATCHES[category];
+    if (tokens.some((token) => lower.includes(token))) {
+      return category;
+    }
+  }
+  return null;
+};
+
+const parseCsvFile = (file: File): Promise<Row[]> =>
+  new Promise((resolve, reject) => {
+    Papa.parse<Row>(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => resolve(results.data.filter(Boolean)),
+      error: (error) => reject(error),
+    });
+  });
 
 function Section({ title, children, right }: { title: string; children: React.ReactNode; right?: React.ReactNode }) {
   return (
@@ -104,70 +145,8 @@ function EmptyState({ title, subtitle }: { title: string; subtitle: string }) {
   );
 }
 
-function ExpandableRow({
-  label,
-  data,
-  expanded,
-  onToggle,
-}: {
-  label: string;
-  data?: Row;
-  expanded: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <div className="rounded-xl border overflow-hidden bg-white">
-      <button
-        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-neutral-50"
-        onClick={onToggle}
-      >
-        <span className="font-semibold text-neutral-900">{label}</span>
-        {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-      </button>
-      <AnimatePresence initial={false}>
-        {expanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-          >
-            <div className="px-4 pb-4">
-              {data ? (
-                <dl className="grid gap-1 text-sm text-neutral-900">
-                  {Object.entries(data).map(([k, v]) => (
-                    <div key={k} className="grid grid-cols-[auto,1fr] gap-x-2">
-                      <dt className="text-neutral-600 whitespace-nowrap">{k}:</dt>
-                      <dd className="font-medium break-words">{v}</dd>
-                    </div>
-                  ))}
-                </dl>
-              ) : (
-                <div className="text-sm text-neutral-600">—</div>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-type CombinedRow = { characters?: Row; items?: Row; locations?: Row; quests?: Row };
-
-function DrawnCard({
-  id,
-  index,
-  row,
-  onDismiss,
-}: {
-  id: string;
-  index: number;
-  row: CombinedRow;
-  onDismiss: (id: string) => void;
-}) {
-  const [expanded, setExpanded] = useState<"Character" | "Item" | "Location" | "Quest" | null>(null);
+function DrawnCard({ id, index, row, category, onDismiss }: { id: string; index: number; row: Row; category: Category; onDismiss: (id: string) => void; }) {
   const [pips, setPips] = useState<number>(0);
-
   const addPip = () => setPips((n) => Math.min(10, n + 1));
   const clearPips = () => setPips(0);
 
@@ -179,14 +158,14 @@ function DrawnCard({
       exit={{ opacity: 0, y: -8 }}
       className="relative"
     >
-      <Card className="rounded-2xl shadow-md bg-white border-neutral-200">
+      <Card className="rounded-2xl shadow-md bg-white border-neutral-200 h-full">
         <CardContent className="p-4 sm:p-6">
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <Badge variant="secondary">Row #{index + 1}</Badge>
               </div>
-              <h3 className="text-xl font-semibold tracking-tight text-neutral-900">Combined Draw</h3>
+              <h3 className="text-xl font-semibold tracking-tight text-neutral-900">{category.charAt(0).toUpperCase() + category.slice(1)}</h3>
             </div>
             <div className="flex items-center gap-1">
               <Button size="icon" variant="ghost" onClick={addPip} disabled={pips >= 10} title={pips >= 10 ? "Max 10 markers" : "Add red marker"}>
@@ -202,30 +181,14 @@ function DrawnCard({
           </div>
 
           <div className="grid gap-3 mt-4">
-            <ExpandableRow
-              label="Character"
-              data={row.characters}
-              expanded={expanded === "Character"}
-              onToggle={() => setExpanded(expanded === "Character" ? null : "Character")}
-            />
-            <ExpandableRow
-              label="Item"
-              data={row.items}
-              expanded={expanded === "Item"}
-              onToggle={() => setExpanded(expanded === "Item" ? null : "Item")}
-            />
-            <ExpandableRow
-              label="Location"
-              data={row.locations}
-              expanded={expanded === "Location"}
-              onToggle={() => setExpanded(expanded === "Location" ? null : "Location")}
-            />
-            <ExpandableRow
-              label="Quest"
-              data={row.quests}
-              expanded={expanded === "Quest"}
-              onToggle={() => setExpanded(expanded === "Quest" ? null : "Quest")}
-            />
+            <dl className="grid gap-1 text-sm text-neutral-900">
+              {Object.entries(row).map(([k, v]) => (
+                <div key={k} className="grid grid-cols-[auto,1fr] gap-x-2">
+                  <dt className="text-neutral-600 whitespace-nowrap">{k}:</dt>
+                  <dd className="font-medium break-words">{v}</dd>
+                </div>
+              ))}
+            </dl>
           </div>
 
           <div className="mt-4 flex items-center justify-between">
@@ -245,7 +208,7 @@ function DrawnCard({
   );
 }
 
-type Drawn = { id: string; index: number; row: CombinedRow };
+type Drawn = { id: string; index: number; row: Row; category: Category };
 
 export default function App() {
   const [data, setData] = useState<DataBundle>({ characters: [], items: [], locations: [], quests: [] });
@@ -254,13 +217,21 @@ export default function App() {
   const [remaining, setRemaining] = useState<number[]>([]);
   const [lastRoll, setLastRoll] = useState<number | null>(null);
   const [rollToken, setRollToken] = useState(0);
+  const [selectedCategory, setSelectedCategory] = useState<Category>("characters");
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkStatus, setBulkStatus] = useState<string | null>(null);
+  const bulkInputRef = useRef<HTMLInputElement | null>(null);
+
+  const selectCategory = (category: Category) => {
+    setSelectedCategory(category);
+    setRemaining([]);
+  };
 
   const minLen = useMemo(() => {
-    const lens = [data.characters.length, data.items.length, data.locations.length, data.quests.length].filter(Boolean);
-    return lens.length ? Math.min(...lens) : 0;
-  }, [data]);
+    return data[selectedCategory].length;
+  }, [data, selectedCategory]);
 
-  const allLoaded = [data.characters, data.items, data.locations, data.quests].every((arr) => arr.length > 0);
+  const allLoaded = minLen > 0;
 
   useEffect(() => {
     if (allLoaded && remaining.length === 0) {
@@ -270,6 +241,7 @@ export default function App() {
 
   const handleLoad = (key: keyof DataBundle) => (rows: Row[]) => {
     setData((d) => ({ ...d, [key]: rows }));
+    // Clear existing draws / remaining to avoid mismatches
     setRemaining([]);
     setDrawn([]);
   };
@@ -289,15 +261,10 @@ export default function App() {
       setRemaining(newRemaining);
     }
 
-    const row = {
-      characters: data.characters[index],
-      items: data.items[index],
-      locations: data.locations[index],
-      quests: data.quests[index],
-    } as CombinedRow;
+    const row = data[selectedCategory][index];
 
     const id = `${index}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    setDrawn((prev) => [{ id, index, row }, ...prev]);
+    setDrawn((prev) => [{ id, index, row, category: selectedCategory }, ...prev]);
   };
 
   const reshuffle = () => {
@@ -310,6 +277,95 @@ export default function App() {
   const rollOneToThree = () => {
     setLastRoll(1 + Math.floor(Math.random() * 3));
     setRollToken((t) => t + 1);
+  };
+
+  const handleBulkUpload = async (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+
+    const files = Array.from(fileList).filter((file) => file.name.toLowerCase().endsWith(".csv"));
+    if (files.length === 0) {
+      setBulkStatus("No CSV files selected.");
+      if (bulkInputRef.current) bulkInputRef.current.value = "";
+      return;
+    }
+
+    setBulkLoading(true);
+    setBulkStatus(null);
+
+    try {
+      const parsed = await Promise.all(
+        files.map((file) =>
+          parseCsvFile(file)
+            .then((rows) => ({ file, rows }))
+            .catch(() => ({ file, rows: null as Row[] | null }))
+        )
+      );
+
+      const assignments: string[] = [];
+      const failures: string[] = [];
+      const skipped: string[] = [];
+      const newData: Partial<DataBundle> = {};
+      const assigned = new Set<Category>();
+      const assignedCounts = new Map<Category, number>();
+      const unmatched: Array<{ file: File; rows: Row[] }> = [];
+
+      parsed.forEach(({ file, rows }) => {
+        if (!rows) {
+          failures.push(file.name);
+          return;
+        }
+        const detected = detectCategoryFromFilename(file.name);
+        if (detected) {
+          newData[detected] = rows;
+          assigned.add(detected);
+          const prevCount = assignedCounts.get(detected) ?? 0;
+          assignedCounts.set(detected, prevCount + 1);
+          const overrideNote = prevCount > 0 ? " (overrides previous)" : "";
+          assignments.push(`${file.name} → ${getCategoryLabel(detected)}${overrideNote}`);
+        } else {
+          unmatched.push({ file, rows });
+        }
+      });
+
+      const fallbackQueue = CATEGORY_ORDER.filter((category) => !assigned.has(category));
+
+      unmatched.forEach(({ file, rows }) => {
+        if (fallbackQueue.length === 0) {
+          skipped.push(file.name);
+          return;
+        }
+        const fallbackCategory = fallbackQueue.shift()!;
+        newData[fallbackCategory] = rows;
+        assigned.add(fallbackCategory);
+        const label = getCategoryLabel(fallbackCategory);
+        assignments.push(`${file.name} → ${label} (default)`);
+      });
+
+      if (Object.keys(newData).length > 0) {
+        setData((prev) => ({ ...prev, ...newData }));
+        setRemaining([]);
+        setDrawn([]);
+      }
+
+      const statusParts: string[] = [];
+      if (assignments.length) {
+        statusParts.push(
+          `Loaded ${assignments.length} file${assignments.length === 1 ? "" : "s"}: ${assignments.join(", ")}`
+        );
+      }
+      if (skipped.length) {
+        statusParts.push(`Skipped (no slots left): ${skipped.join(", ")}`);
+      }
+      if (failures.length) {
+        statusParts.push(`Failed to parse: ${failures.join(", ")}`);
+      }
+      setBulkStatus(statusParts.join(" | ") || "No files were processed.");
+    } catch (error) {
+      setBulkStatus("Bulk upload failed.");
+    } finally {
+      setBulkLoading(false);
+      if (bulkInputRef.current) bulkInputRef.current.value = "";
+    }
   };
 
   return (
@@ -338,11 +394,12 @@ export default function App() {
         <Section
           title="Load your four CSVs"
           right={
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <div className="flex items-center gap-2">
                 <Label htmlFor="repeats" className="text-sm text-neutral-700">Allow repeats</Label>
                 <Switch id="repeats" checked={allowRepeats} onCheckedChange={setAllowRepeats} />
               </div>
+
               <Button variant="secondary" className="gap-2" onClick={reshuffle} disabled={!allLoaded}>
                 <Shuffle className="h-4 w-4" /> Reshuffle deck
               </Button>
@@ -356,6 +413,42 @@ export default function App() {
             <FilePicker id="quests" label="Quests CSV" onFile={handleLoad("quests")} />
           </div>
 
+          <div className="mt-6">
+            <div className="flex items-start gap-3">
+              <div className="grid gap-2 w-full">
+                <Label htmlFor="bulk-upload" className="text-neutral-800">Bulk upload CSVs</Label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input
+                    id="bulk-upload"
+                    type="file"
+                    accept=".csv,text/csv"
+                    multiple
+                    ref={bulkInputRef}
+                    onChange={(e) => handleBulkUpload(e.target.files)}
+                    className="text-neutral-900 placeholder:text-neutral-500 file:text-neutral-900"
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => bulkInputRef.current?.click()}
+                    className="gap-2"
+                    disabled={bulkLoading}
+                  >
+                    <Upload className="h-4 w-4" /> Upload multiple CSVs
+                  </Button>
+                  {bulkLoading && (
+                    <Badge variant="secondary" className="gap-1">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Parsing…
+                    </Badge>
+                  )}
+                </div>
+                {bulkStatus && (
+                  <div className="text-sm text-neutral-700">{bulkStatus}</div>
+                )}
+              </div>
+            </div>
+          </div>
+
           <div className="flex flex-wrap items-center gap-3 mt-4">
             <Badge variant="outline">Characters: {data.characters.length}</Badge>
             <Badge variant="outline">Items: {data.items.length}</Badge>
@@ -367,32 +460,52 @@ export default function App() {
             )}
           </div>
 
-          <div className="mt-4 flex items-center gap-2">
-            <Button size="lg" className="rounded-2xl gap-2" onClick={drawOne} disabled={!allLoaded || (!allowRepeats && remaining.length === 0)}>
-              <Layers className="h-5 w-5" /> Draw from deck
-            </Button>
-            <Button variant="ghost" className="gap-2" onClick={clearAllCards} disabled={drawn.length === 0}>
-              <Trash2 className="h-5 w-5" /> Clear drawn cards
-            </Button>
+          <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm text-neutral-700">Draw from</span>
+              {CATEGORY_OPTIONS.map(({ key, label }) => (
+                <Button
+                  key={key}
+                  size="sm"
+                  variant={selectedCategory === key ? "default" : "secondary"}
+                  onClick={() => selectCategory(key)}
+                  aria-pressed={selectedCategory === key}
+                  className="rounded-lg"
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button size="lg" className="rounded-2xl gap-2" onClick={drawOne} disabled={!allLoaded || (!allowRepeats && remaining.length === 0)}>
+                <Layers className="h-5 w-5" /> Draw from deck
+              </Button>
+              <Button variant="ghost" className="gap-2" onClick={clearAllCards} disabled={drawn.length === 0}>
+                <Trash2 className="h-5 w-5" /> Clear drawn cards
+              </Button>
+            </div>
           </div>
         </Section>
 
-        <Section title="Drawn cards" right={<div className="text-sm text-neutral-600">Click a row to expand. Use the red plus to add markers, eraser to clear (max 10).</div>}>
+        <Section title="Drawn cards" right={<div className="text-sm text-neutral-600">Showing only the selected category's details for each drawn card. Use markers to keep track.</div>}>
           {drawn.length === 0 ? (
-            <EmptyState title="No cards drawn yet" subtitle="Load your CSVs above, then press “Draw from deck”. Each card shows the same row joined from all four sheets." />
+            <EmptyState title="No cards drawn yet" subtitle="Load any CSV above, choose a category button, then press “Draw from deck”." />
           ) : (
-            <AnimatePresence initial={false}>
-              <div className="grid md:grid-cols-2 xl:grid-cols-2 gap-4">
-                {drawn.map(({ id, index, row }) => (
-                  <DrawnCard key={id} id={id} index={index} row={row} onDismiss={(removeId) => setDrawn((d) => d.filter((c) => c.id !== removeId))} />
-                ))}
+            <div className="max-h-[90vh] md:max-h-[880px] md:min-h-[620px] overflow-y-auto pr-2 pb-1">
+              <div className="grid md:grid-cols-2 xl:grid-cols-2 gap-4 auto-rows-fr">
+                <AnimatePresence initial={false}>
+                  {drawn.map(({ id, index, row, category }) => (
+                    <DrawnCard key={id} id={id} index={index} row={row} category={category} onDismiss={(removeId) => setDrawn((d) => d.filter((c) => c.id !== removeId))} />
+                  ))}
+                </AnimatePresence>
               </div>
-            </AnimatePresence>
+            </div>
           )}
         </Section>
 
         <div className="text-xs text-neutral-600 text-center py-2">
-          Tip: The same row index across all four CSVs is treated as one "card". Make sure the files are sorted consistently.
+          Tip: Pick the category button you want to draw from. Each draw shows the row from the chosen CSV only — files do not need to align across sheets anymore.
         </div>
       </div>
     </div>
