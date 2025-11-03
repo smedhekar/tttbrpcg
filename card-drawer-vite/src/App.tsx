@@ -159,7 +159,7 @@ function DrawnCard({ id, index, row, category, onDismiss }: { id: string; index:
       className="relative"
     >
       <Card className="rounded-2xl shadow-md bg-white border-neutral-200 h-full">
-        <CardContent className="p-4 sm:p-6">
+        <CardContent className="p-3 sm:p-5 lg:p-6">
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="flex items-center gap-2 mb-1">
@@ -181,11 +181,11 @@ function DrawnCard({ id, index, row, category, onDismiss }: { id: string; index:
           </div>
 
           <div className="grid gap-3 mt-4">
-            <dl className="grid gap-1 text-sm text-neutral-900">
+            <dl className="grid gap-2 text-sm text-neutral-900">
               {Object.entries(row).map(([k, v]) => (
-                <div key={k} className="grid grid-cols-[auto,1fr] gap-x-2">
-                  <dt className="text-neutral-600 whitespace-nowrap">{k}:</dt>
-                  <dd className="font-medium break-words">{v}</dd>
+                <div key={k} className="grid gap-1">
+                  <dt className="text-xs font-medium uppercase tracking-wide text-neutral-500">{k}</dt>
+                  <dd className="font-medium break-words text-neutral-900">{v}</dd>
                 </div>
               ))}
             </dl>
@@ -493,7 +493,7 @@ export default function App() {
             <EmptyState title="No cards drawn yet" subtitle="Load any CSV above, choose a category button, then press “Draw from deck”." />
           ) : (
             <div className="max-h-[90vh] md:max-h-[880px] md:min-h-[620px] overflow-y-auto pr-2 pb-1">
-              <div className="grid md:grid-cols-2 xl:grid-cols-2 gap-4 auto-rows-fr">
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 auto-rows-fr">
                 <AnimatePresence initial={false}>
                   {drawn.map(({ id, index, row, category }) => (
                     <DrawnCard key={id} id={id} index={index} row={row} category={category} onDismiss={(removeId) => setDrawn((d) => d.filter((c) => c.id !== removeId))} />
